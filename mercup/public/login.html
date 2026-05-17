@@ -1,0 +1,101 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>MercUp — Entrar</title>
+  <link rel="stylesheet" href="style.css"/>
+</head>
+<body>
+  <div class="auth-wrap">
+    <div class="auth-box">
+      <div class="auth-logo">
+        <h1>Merc<span>Up</span></h1>
+        <p>Clube de vantagens e promoções</p>
+      </div>
+
+      <h2 id="form-title">Entrar na sua conta</h2>
+      <p class="error-msg" id="error-msg"></p>
+
+      <div id="field-name" class="form-group" style="display:none">
+        <label>Nome completo</label>
+        <input type="text" id="name" placeholder="Seu nome"/>
+      </div>
+      <div class="form-group">
+        <label>E-mail</label>
+        <input type="email" id="email" placeholder="seu@email.com"/>
+      </div>
+      <div class="form-group">
+        <label>Senha</label>
+        <input type="password" id="password" placeholder="••••••••"/>
+      </div>
+
+      <button class="btn btn-primary" id="submit-btn">Entrar</button>
+
+      <p class="auth-toggle">
+        Não tem conta? <a href="#" id="toggle-link">Cadastre-se grátis</a>
+      </p>
+    </div>
+  </div>
+
+  <script>
+    let isLogin = true;
+
+    function setMode(login) {
+      isLogin = login;
+      document.getElementById('form-title').textContent = login ? 'Entrar na sua conta' : 'Criar conta grátis';
+      document.getElementById('submit-btn').textContent = login ? 'Entrar' : 'Cadastrar';
+      document.getElementById('field-name').style.display = login ? 'none' : 'block';
+      document.getElementById('toggle-link').textContent = login ? 'Cadastre-se grátis' : 'Já tenho conta';
+      document.getElementById('error-msg').style.display = 'none';
+    }
+
+    document.getElementById('toggle-link').addEventListener('click', (e) => {
+      e.preventDefault();
+      setMode(!isLogin);
+    });
+
+    document.getElementById('submit-btn').addEventListener('click', async () => {
+      const email = document.getElementById('email').value.trim();
+      const password = document.getElementById('password').value;
+      const name = document.getElementById('name').value.trim();
+      const errorEl = document.getElementById('error-msg');
+
+      if (!email || !password || (!isLogin && !name)) {
+        errorEl.textContent = 'Preencha todos os campos';
+        errorEl.style.display = 'block';
+        return;
+      }
+
+      if (!isLogin) {
+        const reg = await fetch('/auth/register', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ name, email, password }),
+        });
+        if (!reg.ok) {
+          const d = await reg.json();
+          errorEl.textContent = d.error;
+          errorEl.style.display = 'block';
+          return;
+        }
+      }
+
+      const res = await fetch('/auth/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email, password }),
+      });
+      const data = await res.json();
+
+      if (!res.ok) {
+        errorEl.textContent = data.error;
+        errorEl.style.display = 'block';
+        return;
+      }
+
+      window.location.href = data.role === 'admin' ? '/admin.html' : '/index.html';
+    });
+  </script>
+</body>
+</html>

@@ -1,0 +1,349 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>MercUp — Admin</title>
+  <link rel="stylesheet" href="style.css"/>
+</head>
+<body>
+  <nav>
+    <a class="nav-brand" href="#">Merc<span>Up</span> <small style="font-size:0.7rem;opacity:0.8">Admin</small></a>
+    <div class="nav-right">
+      <a class="btn-nav" href="/index.html">Ver site</a>
+      <button class="btn-nav" id="logout-btn">Sair</button>
+    </div>
+  </nav>
+
+  <div class="tabs">
+    <button class="tab-btn active" data-tab="dashboard">📊 Dashboard</button>
+    <button class="tab-btn" data-tab="products">📦 Produtos</button>
+    <button class="tab-btn" data-tab="promotions">🔥 Promoções</button>
+    <button class="tab-btn" data-tab="stock">🗃 Estoque</button>
+  </div>
+
+  <div class="container">
+
+    <!-- DASHBOARD -->
+    <div id="tab-dashboard">
+      <div class="stats" id="stats"></div>
+    </div>
+
+    <!-- PRODUTOS -->
+    <div id="tab-products" style="display:none">
+      <div class="section-header">
+        <h2>Produtos</h2>
+        <button class="btn btn-success" onclick="openModal('product')">+ Novo produto</button>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Nome</th><th>Categoria</th><th>Preço</th><th>Estoque</th><th>Ações</th></tr></thead>
+          <tbody id="products-table"></tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- PROMOÇÕES -->
+    <div id="tab-promotions" style="display:none">
+      <div class="section-header">
+        <h2>Promoções</h2>
+        <button class="btn btn-success" onclick="openModal('promotion')">+ Nova promoção</button>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Título</th><th>Desconto</th><th>Produto</th><th>Validade</th><th>Status</th><th>Ações</th></tr></thead>
+          <tbody id="promotions-table"></tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- ESTOQUE -->
+    <div id="tab-stock" style="display:none">
+      <div class="section-header"><h2>Controle de Estoque</h2></div>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Produto</th><th>Categoria</th><th>Estoque</th><th>Status</th><th>Atualizar</th></tr></thead>
+          <tbody id="stock-table"></tbody>
+        </table>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- MODAL PRODUTO -->
+  <div class="modal-overlay" id="modal-product">
+    <div class="modal">
+      <h3 id="modal-product-title">Novo Produto</h3>
+      <input type="hidden" id="product-id"/>
+      <div class="form-group"><label>Nome *</label><input type="text" id="product-name"/></div>
+      <div class="form-group"><label>Descrição</label><textarea id="product-desc" rows="2"></textarea></div>
+      <div class="form-group"><label>Preço (R$) *</label><input type="number" id="product-price" step="0.01"/></div>
+      <div class="form-group"><label>Estoque</label><input type="number" id="product-stock" value="0"/></div>
+      <div class="form-group"><label>Categoria</label><input type="text" id="product-category" placeholder="Ex: Bebidas, Hortifruti..."/></div>
+      <div class="form-group"><label>URL da imagem</label><input type="text" id="product-image" placeholder="https://..."/></div>
+      <div class="modal-footer">
+        <button class="btn" onclick="closeModal('product')" style="background:#eee">Cancelar</button>
+        <button class="btn btn-success" onclick="saveProduct()">Salvar</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- MODAL PROMOÇÃO -->
+  <div class="modal-overlay" id="modal-promotion">
+    <div class="modal">
+      <h3 id="modal-promo-title">Nova Promoção</h3>
+      <input type="hidden" id="promo-id"/>
+      <div class="form-group"><label>Título *</label><input type="text" id="promo-title"/></div>
+      <div class="form-group"><label>Descrição</label><textarea id="promo-desc" rows="2"></textarea></div>
+      <div class="form-group"><label>Desconto (%) *</label><input type="number" id="promo-discount" min="1" max="100"/></div>
+      <div class="form-group"><label>Produto vinculado</label>
+        <select id="promo-product"><option value="">— Nenhum —</option></select>
+      </div>
+      <div class="form-group"><label>URL da imagem</label><input type="text" id="promo-image" placeholder="https://..."/></div>
+      <div class="form-group"><label>Válido até</label><input type="date" id="promo-expires"/></div>
+      <div class="form-group"><label>Status</label>
+        <select id="promo-active"><option value="1">Ativa</option><option value="0">Inativa</option></select>
+      </div>
+      <div class="modal-footer">
+        <button class="btn" onclick="closeModal('promotion')" style="background:#eee">Cancelar</button>
+        <button class="btn btn-success" onclick="savePromotion()">Salvar</button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    let products = [], promotions = [];
+
+    async function init() {
+      const res = await fetch('/auth/me');
+      if (!res.ok || (await res.json()).role !== 'admin') {
+        window.location.href = '/login.html';
+        return;
+      }
+      await Promise.all([loadProducts(), loadPromotions()]);
+      renderDashboard();
+    }
+
+    async function loadProducts() {
+      const res = await fetch('/api/products');
+      products = await res.json();
+      renderProducts();
+      renderStock();
+      renderProductSelect();
+    }
+
+    async function loadPromotions() {
+      const res = await fetch('/api/promotions/all');
+      promotions = await res.json();
+      renderPromotions();
+    }
+
+    function renderDashboard() {
+      const totalStock = products.reduce((s, p) => s + p.stock, 0);
+      const lowStock = products.filter(p => p.stock > 0 && p.stock <= 5).length;
+      const outStock = products.filter(p => p.stock === 0).length;
+      const activePromos = promotions.filter(p => p.active).length;
+
+      document.getElementById('stats').innerHTML = `
+        <div class="stat-card"><div class="stat-value">${products.length}</div><div class="stat-label">Produtos cadastrados</div></div>
+        <div class="stat-card"><div class="stat-value">${totalStock}</div><div class="stat-label">Unidades em estoque</div></div>
+        <div class="stat-card"><div class="stat-value" style="color:#f4a261">${lowStock}</div><div class="stat-label">Estoque baixo</div></div>
+        <div class="stat-card"><div class="stat-value" style="color:#dc3545">${outStock}</div><div class="stat-label">Sem estoque</div></div>
+        <div class="stat-card"><div class="stat-value" style="color:#2d6a4f">${activePromos}</div><div class="stat-label">Promoções ativas</div></div>
+      `;
+    }
+
+    function renderProducts() {
+      document.getElementById('products-table').innerHTML = products.map(p => `
+        <tr>
+          <td><strong>${p.name}</strong></td>
+          <td>${p.category || '—'}</td>
+          <td>R$ ${Number(p.price).toFixed(2)}</td>
+          <td>${p.stock}</td>
+          <td style="display:flex;gap:0.4rem">
+            <button class="btn btn-sm btn-success" onclick="editProduct(${p.id})">Editar</button>
+            <button class="btn btn-sm btn-danger" onclick="deleteProduct(${p.id})">Excluir</button>
+          </td>
+        </tr>
+      `).join('') || '<tr><td colspan="5" style="text-align:center;color:#999;padding:2rem">Nenhum produto</td></tr>';
+    }
+
+    function renderPromotions() {
+      document.getElementById('promotions-table').innerHTML = promotions.map(p => `
+        <tr>
+          <td><strong>${p.title}</strong></td>
+          <td><span class="badge badge-red">${p.discount}% OFF</span></td>
+          <td>${p.product_name || '—'}</td>
+          <td>${p.expires_at ? new Date(p.expires_at).toLocaleDateString('pt-BR') : '—'}</td>
+          <td><span class="badge ${p.active ? 'badge-green' : ''}" style="${!p.active ? 'background:#f1f3f5;color:#999' : ''}">${p.active ? 'Ativa' : 'Inativa'}</span></td>
+          <td style="display:flex;gap:0.4rem">
+            <button class="btn btn-sm btn-success" onclick="editPromotion(${p.id})">Editar</button>
+            <button class="btn btn-sm btn-danger" onclick="deletePromotion(${p.id})">Excluir</button>
+          </td>
+        </tr>
+      `).join('') || '<tr><td colspan="6" style="text-align:center;color:#999;padding:2rem">Nenhuma promoção</td></tr>';
+    }
+
+    function renderStock() {
+      document.getElementById('stock-table').innerHTML = products.map(p => {
+        const status = p.stock === 0 ? 'stock-out' : p.stock <= 5 ? 'stock-low' : 'stock-ok';
+        const label = p.stock === 0 ? '✗ Sem estoque' : p.stock <= 5 ? '⚠ Estoque baixo' : '✓ Normal';
+        return `
+          <tr>
+            <td><strong>${p.name}</strong></td>
+            <td>${p.category || '—'}</td>
+            <td><strong>${p.stock}</strong> un.</td>
+            <td><span class="${status}">${label}</span></td>
+            <td style="display:flex;gap:0.4rem;align-items:center">
+              <input type="number" id="stock-${p.id}" value="${p.stock}" min="0" style="width:70px;padding:0.3rem 0.5rem;border:1px solid #ddd;border-radius:6px"/>
+              <button class="btn btn-sm btn-success" onclick="updateStock(${p.id})">Salvar</button>
+            </td>
+          </tr>
+        `;
+      }).join('') || '<tr><td colspan="5" style="text-align:center;color:#999;padding:2rem">Nenhum produto</td></tr>';
+    }
+
+    function renderProductSelect() {
+      const sel = document.getElementById('promo-product');
+      const current = sel.value;
+      sel.innerHTML = '<option value="">— Nenhum —</option>' +
+        products.map(p => `<option value="${p.id}">${p.name}</option>`).join('');
+      sel.value = current;
+    }
+
+    // PRODUTO CRUD
+    function openModal(type) {
+      if (type === 'product') {
+        document.getElementById('modal-product-title').textContent = 'Novo Produto';
+        ['product-id','product-name','product-desc','product-price','product-stock','product-category','product-image']
+          .forEach(id => document.getElementById(id).value = id === 'product-stock' ? '0' : '');
+      } else {
+        document.getElementById('modal-promo-title').textContent = 'Nova Promoção';
+        ['promo-id','promo-title','promo-desc','promo-discount','promo-image','promo-expires']
+          .forEach(id => document.getElementById(id).value = '');
+        document.getElementById('promo-product').value = '';
+        document.getElementById('promo-active').value = '1';
+      }
+      document.getElementById(`modal-${type}`).classList.add('open');
+    }
+
+    function closeModal(type) {
+      document.getElementById(`modal-${type}`).classList.remove('open');
+    }
+
+    function editProduct(id) {
+      const p = products.find(x => x.id === id);
+      document.getElementById('modal-product-title').textContent = 'Editar Produto';
+      document.getElementById('product-id').value = p.id;
+      document.getElementById('product-name').value = p.name;
+      document.getElementById('product-desc').value = p.description || '';
+      document.getElementById('product-price').value = p.price;
+      document.getElementById('product-stock').value = p.stock;
+      document.getElementById('product-category').value = p.category || '';
+      document.getElementById('product-image').value = p.image || '';
+      document.getElementById('modal-product').classList.add('open');
+    }
+
+    async function saveProduct() {
+      const id = document.getElementById('product-id').value;
+      const body = {
+        name: document.getElementById('product-name').value,
+        description: document.getElementById('product-desc').value,
+        price: parseFloat(document.getElementById('product-price').value),
+        stock: parseInt(document.getElementById('product-stock').value),
+        category: document.getElementById('product-category').value,
+        image: document.getElementById('product-image').value,
+      };
+      const url = id ? `/api/products/${id}` : '/api/products';
+      const method = id ? 'PUT' : 'POST';
+      await fetch(url, { method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+      closeModal('product');
+      await loadProducts();
+      renderDashboard();
+    }
+
+    async function deleteProduct(id) {
+      if (!confirm('Excluir este produto?')) return;
+      await fetch(`/api/products/${id}`, { method: 'DELETE' });
+      await loadProducts();
+      renderDashboard();
+    }
+
+    async function updateStock(id) {
+      const stock = parseInt(document.getElementById(`stock-${id}`).value);
+      const p = products.find(x => x.id === id);
+      await fetch(`/api/products/${id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ...p, stock }),
+      });
+      await loadProducts();
+      renderDashboard();
+    }
+
+    // PROMOÇÃO CRUD
+    function editPromotion(id) {
+      const p = promotions.find(x => x.id === id);
+      document.getElementById('modal-promo-title').textContent = 'Editar Promoção';
+      document.getElementById('promo-id').value = p.id;
+      document.getElementById('promo-title').value = p.title;
+      document.getElementById('promo-desc').value = p.description || '';
+      document.getElementById('promo-discount').value = p.discount;
+      document.getElementById('promo-product').value = p.product_id || '';
+      document.getElementById('promo-image').value = p.image || '';
+      document.getElementById('promo-expires').value = p.expires_at ? p.expires_at.split('T')[0] : '';
+      document.getElementById('promo-active').value = p.active;
+      document.getElementById('modal-promotion').classList.add('open');
+    }
+
+    async function savePromotion() {
+      const id = document.getElementById('promo-id').value;
+      const body = {
+        title: document.getElementById('promo-title').value,
+        description: document.getElementById('promo-desc').value,
+        discount: parseInt(document.getElementById('promo-discount').value),
+        product_id: document.getElementById('promo-product').value || null,
+        image: document.getElementById('promo-image').value,
+        expires_at: document.getElementById('promo-expires').value,
+        active: parseInt(document.getElementById('promo-active').value),
+      };
+      const url = id ? `/api/promotions/${id}` : '/api/promotions';
+      const method = id ? 'PUT' : 'POST';
+      await fetch(url, { method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+      closeModal('promotion');
+      await loadPromotions();
+      renderDashboard();
+    }
+
+    async function deletePromotion(id) {
+      if (!confirm('Excluir esta promoção?')) return;
+      await fetch(`/api/promotions/${id}`, { method: 'DELETE' });
+      await loadPromotions();
+      renderDashboard();
+    }
+
+    // TABS
+    document.querySelectorAll('.tab-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+        ['dashboard','products','promotions','stock'].forEach(t => {
+          document.getElementById(`tab-${t}`).style.display = btn.dataset.tab === t ? 'block' : 'none';
+        });
+      });
+    });
+
+    document.getElementById('logout-btn').addEventListener('click', async () => {
+      await fetch('/auth/logout', { method: 'POST' });
+      window.location.href = '/login.html';
+    });
+
+    // Fechar modal clicando fora
+    document.querySelectorAll('.modal-overlay').forEach(el => {
+      el.addEventListener('click', (e) => { if (e.target === el) el.classList.remove('open'); });
+    });
+
+    init();
+  </script>
+</body>
+</html>

@@ -1,0 +1,77 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Login — Favoritos</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <div class="auth-container">
+    <h1 id="form-title">Entrar</h1>
+    <p class="error-msg" id="error-msg"></p>
+
+    <input type="text" id="username" placeholder="Usuário" />
+    <input type="password" id="password" placeholder="Senha" />
+    <button id="submit-btn">Entrar</button>
+
+    <p id="toggle-text">
+      Não tem conta? <a href="#" id="toggle-link">Cadastre-se</a>
+    </p>
+  </div>
+
+  <script>
+    let isLogin = true;
+
+    document.getElementById('toggle-link').addEventListener('click', (e) => {
+      e.preventDefault();
+      isLogin = !isLogin;
+      document.getElementById('form-title').textContent = isLogin ? 'Entrar' : 'Cadastrar';
+      document.getElementById('submit-btn').textContent = isLogin ? 'Entrar' : 'Cadastrar';
+      document.getElementById('toggle-text').innerHTML = isLogin
+        ? 'Não tem conta? <a href="#" id="toggle-link">Cadastre-se</a>'
+        : 'Já tem conta? <a href="#" id="toggle-link">Entrar</a>';
+      document.getElementById('toggle-link').addEventListener('click', arguments.callee);
+      document.getElementById('error-msg').style.display = 'none';
+    });
+
+    document.getElementById('submit-btn').addEventListener('click', async () => {
+      const username = document.getElementById('username').value.trim();
+      const password = document.getElementById('password').value;
+      const errorEl = document.getElementById('error-msg');
+
+      if (!username || !password) {
+        errorEl.textContent = 'Preencha todos os campos';
+        errorEl.style.display = 'block';
+        return;
+      }
+
+      const endpoint = isLogin ? '/auth/login' : '/auth/register';
+      const res = await fetch(endpoint, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ username, password }),
+      });
+
+      const data = await res.json();
+
+      if (!res.ok) {
+        errorEl.textContent = data.error;
+        errorEl.style.display = 'block';
+        return;
+      }
+
+      if (!isLogin) {
+        // após cadastro, faz login automático
+        await fetch('/auth/login', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ username, password }),
+        });
+      }
+
+      window.location.href = '/index.html';
+    });
+  </script>
+</body>
+</html>

@@ -1,0 +1,120 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>MercUp — Ofertas</title>
+  <link rel="stylesheet" href="style.css"/>
+</head>
+<body>
+  <nav>
+    <a class="nav-brand" href="#">Merc<span>Up</span></a>
+    <div class="nav-right">
+      <small id="nav-user"></small>
+      <button class="btn-nav" id="logout-btn">Sair</button>
+    </div>
+  </nav>
+
+  <div class="hero">
+    <h2>🛒 Bem-vindo ao MercUp!</h2>
+    <p>Confira as melhores ofertas e promoções exclusivas para você</p>
+  </div>
+
+  <div class="tabs">
+    <button class="tab-btn active" data-tab="promotions">🔥 Promoções</button>
+    <button class="tab-btn" data-tab="products">📦 Produtos</button>
+  </div>
+
+  <div class="container">
+    <div id="tab-promotions">
+      <div class="grid" id="promo-grid"></div>
+    </div>
+    <div id="tab-products" style="display:none">
+      <div class="grid" id="product-grid"></div>
+    </div>
+  </div>
+
+  <script>
+    let currentTab = 'promotions';
+
+    async function init() {
+      const res = await fetch('/auth/me');
+      if (!res.ok) { window.location.href = '/login.html'; return; }
+      const user = await res.json();
+      document.getElementById('nav-user').textContent = `Olá, ${user.name}`;
+      loadPromotions();
+      loadProducts();
+    }
+
+    async function loadPromotions() {
+      const res = await fetch('/api/promotions');
+      const data = await res.json();
+      const grid = document.getElementById('promo-grid');
+
+      if (!data.length) {
+        grid.innerHTML = '<p class="empty">Nenhuma promoção ativa no momento.</p>';
+        return;
+      }
+
+      grid.innerHTML = data.map(p => `
+        <div class="promo-card">
+          <div class="promo-discount">${p.discount}%<br/><small style="font-size:0.55rem">OFF</small></div>
+          <h3>${p.title}</h3>
+          <p>${p.description || ''}</p>
+          ${p.product_name ? `<span class="badge badge-red" style="background:rgba(255,255,255,0.2);color:white">📦 ${p.product_name}</span>` : ''}
+          ${p.expires_at ? `<p style="font-size:0.75rem;opacity:0.8;margin-top:0.5rem">⏰ Até ${new Date(p.expires_at).toLocaleDateString('pt-BR')}</p>` : ''}
+        </div>
+      `).join('');
+    }
+
+    async function loadProducts() {
+      const res = await fetch('/api/products');
+      const data = await res.json();
+      const grid = document.getElementById('product-grid');
+
+      if (!data.length) {
+        grid.innerHTML = '<p class="empty">Nenhum produto cadastrado.</p>';
+        return;
+      }
+
+      grid.innerHTML = data.map(p => {
+        const stockLabel = p.stock === 0
+          ? '<span class="stock-out">✗ Sem estoque</span>'
+          : p.stock <= 5
+          ? `<span class="stock-low">⚠ Últimas ${p.stock} unidades</span>`
+          : `<span class="stock-ok">✓ Em estoque</span>`;
+
+        return `
+          <div class="card">
+            <img src="${p.image || `https://picsum.photos/seed/${p.id}prod/400/200`}" alt="${p.name}"/>
+            <div class="card-body">
+              ${p.category ? `<span class="badge badge-green">${p.category}</span>` : ''}
+              <h3 style="margin-top:0.4rem">${p.name}</h3>
+              <p>${p.description || ''}</p>
+              <div class="price">R$ ${Number(p.price).toFixed(2)}</div>
+              ${stockLabel}
+            </div>
+          </div>
+        `;
+      }).join('');
+    }
+
+    document.querySelectorAll('.tab-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+        currentTab = btn.dataset.tab;
+        document.getElementById('tab-promotions').style.display = currentTab === 'promotions' ? 'block' : 'none';
+        document.getElementById('tab-products').style.display = currentTab === 'products' ? 'block' : 'none';
+      });
+    });
+
+    document.getElementById('logout-btn').addEventListener('click', async () => {
+      await fetch('/auth/logout', { method: 'POST' });
+      window.location.href = '/login.html';
+    });
+
+    init();
+  </script>
+</body>
+</html>

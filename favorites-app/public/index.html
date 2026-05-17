@@ -1,0 +1,117 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Favoritos</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <nav>
+    <a href="#">⭐ Favoritos App</a>
+    <div class="nav-right">
+      <span id="nav-user"></span>
+      <button id="logout-btn">Sair</button>
+    </div>
+  </nav>
+
+  <div class="tabs">
+    <button class="tab-btn active" data-tab="all">Todos os itens</button>
+    <button class="tab-btn" data-tab="favs">Meus Favoritos</button>
+  </div>
+
+  <div class="container">
+    <div class="grid" id="grid"></div>
+  </div>
+
+  <script>
+    // Itens de exemplo do site
+    const ITEMS = [
+      { id: '1', title: 'Notebook Pro', description: 'Notebook de alta performance para trabalho.', image: 'https://picsum.photos/seed/notebook/400/200' },
+      { id: '2', title: 'Fone Bluetooth', description: 'Som imersivo com cancelamento de ruído.', image: 'https://picsum.photos/seed/fone/400/200' },
+      { id: '3', title: 'Teclado Mecânico', description: 'Teclado gamer com switches Cherry MX.', image: 'https://picsum.photos/seed/teclado/400/200' },
+      { id: '4', title: 'Monitor 4K', description: 'Tela 27" com resolução 4K e 144Hz.', image: 'https://picsum.photos/seed/monitor/400/200' },
+      { id: '5', title: 'Mouse Ergonômico', description: 'Design ergonômico para longas jornadas.', image: 'https://picsum.photos/seed/mouse/400/200' },
+      { id: '6', title: 'Webcam HD', description: 'Câmera 1080p para videochamadas.', image: 'https://picsum.photos/seed/webcam/400/200' },
+      { id: '7', title: 'SSD 1TB', description: 'Armazenamento rápido NVMe M.2.', image: 'https://picsum.photos/seed/ssd/400/200' },
+      { id: '8', title: 'Hub USB-C', description: '7 portas em 1 para conectar tudo.', image: 'https://picsum.photos/seed/hub/400/200' },
+    ];
+
+    let favorites = new Set();
+    let currentTab = 'all';
+
+    async function init() {
+      const res = await fetch('/auth/me');
+      if (!res.ok) { window.location.href = '/login.html'; return; }
+
+      const user = await res.json();
+      document.getElementById('nav-user').textContent = `Olá, ${user.username}`;
+
+      const favsRes = await fetch('/favorites');
+      const favsData = await favsRes.json();
+      favorites = new Set(favsData.map(f => f.item_id));
+
+      render();
+    }
+
+    function render() {
+      const grid = document.getElementById('grid');
+      const items = currentTab === 'all' ? ITEMS : ITEMS.filter(i => favorites.has(i.id));
+
+      if (items.length === 0) {
+        grid.innerHTML = '<p class="empty">Nenhum favorito ainda. Adicione itens na aba "Todos os itens".</p>';
+        return;
+      }
+
+      grid.innerHTML = items.map(item => `
+        <div class="card">
+          <img src="${item.image}" alt="${item.title}" />
+          <div class="card-body">
+            <h3>${item.title}</h3>
+            <p>${item.description}</p>
+            <button class="fav-btn ${favorites.has(item.id) ? 'active' : ''}" data-id="${item.id}" data-title="${item.title}" data-desc="${item.description}" data-img="${item.image}">
+              ${favorites.has(item.id) ? '★ Favoritado' : '☆ Favoritar'}
+            </button>
+          </div>
+        </div>
+      `).join('');
+
+      grid.querySelectorAll('.fav-btn').forEach(btn => {
+        btn.addEventListener('click', () => toggleFavorite(btn));
+      });
+    }
+
+    async function toggleFavorite(btn) {
+      const id = btn.dataset.id;
+      if (favorites.has(id)) {
+        await fetch(`/favorites/${id}`, { method: 'DELETE' });
+        favorites.delete(id);
+      } else {
+        await fetch('/favorites', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ item_id: id, title: btn.dataset.title, description: btn.dataset.desc, image: btn.dataset.img }),
+        });
+        favorites.add(id);
+      }
+      render();
+    }
+
+    document.querySelectorAll('.tab-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+        currentTab = btn.dataset.tab;
+        render();
+      });
+    });
+
+    document.getElementById('logout-btn').addEventListener('click', async () => {
+      await fetch('/auth/logout', { method: 'POST' });
+      window.location.href = '/login.html';
+    });
+
+    init();
+  </script>
+</body>
+</html>
