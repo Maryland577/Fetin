@@ -1,0 +1,79 @@
+import sqlite3
+from datetime import datetime
+
+# Conectar ao banco (cria se não existir)
+conn = sqlite3.connect("mercup.db")
+cursor = conn.cursor()
+
+# Criar tabela
+cursor.execute("""
+CREATE TABLE IF NOT EXISTS produtos (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    nome TEXT NOT NULL,
+    descricao TEXT,
+    preco REAL NOT NULL,
+    quantidade INTEGER NOT NULL,
+    codigo_barras TEXT UNIQUE,
+    categoria TEXT,
+    data_cadastro TEXT
+)
+""")
+
+conn.commit()
+
+# -----------------------------
+# Funções básicas (CRUD)
+# -----------------------------
+
+def adicionar_produto(nome, descricao, preco, quantidade, codigo_barras, categoria):
+    data_cadastro = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    
+    try:
+        cursor.execute("""
+        
+        INSERT INTO produtos (nome, descricao, preco, quantidade, codigo_barras, categoria, data_cadastro)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+        """, (nome, descricao, preco, quantidade, codigo_barras, categoria, data_cadastro))
+        conn.commit()
+        print("Produto adicionado com sucesso!")
+    
+    except sqlite3.IntegrityError:
+        print("Erro: código de barras já cadastrado.")
+
+def listar_produtos():
+    cursor.execute("SELECT * FROM produtos")
+    produtos = cursor.fetchall()
+    
+    for produto in produtos:
+        print(produto)
+
+def atualizar_produto(id, nome=None, preco=None, quantidade=None):
+    if nome:
+        cursor.execute("UPDATE produtos SET nome = ? WHERE id = ?", (nome, id))
+    if preco:
+        cursor.execute("UPDATE produtos SET preco = ? WHERE id = ?", (preco, id))
+    if quantidade:
+        cursor.execute("UPDATE produtos SET quantidade = ? WHERE id = ?", (quantidade, id))
+    
+    conn.commit()
+    print("Produto atualizado!")
+
+def remover_produto(id):
+    cursor.execute("DELETE FROM produtos WHERE id = ?", (id,))
+    conn.commit()
+    print("Produto removido!")
+
+# -----------------------------
+# Teste rápido
+# -----------------------------
+if __name__ == "__main__":
+    adicionar_produto(
+        "Arroz 5kg",
+        "Arroz branco tipo 1",
+        25.90,
+        50,
+        "7891234567890",
+        "Alimentos"
+    )
+    
+    listar_produtos()
