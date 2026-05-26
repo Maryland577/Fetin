@@ -11,9 +11,49 @@
     <a class="nav-brand" href="#">Merc<span>Up</span></a>
     <div class="nav-right">
       <small id="nav-user"></small>
+      <button class="cart-btn" id="cart-toggle-btn" onclick="toggleCart()">
+        🛒 Carrinho
+        <span class="cart-count" id="cart-count">0</span>
+      </button>
       <button class="btn-nav" id="logout-btn">Sair</button>
     </div>
   </nav>
+
+  <!-- OVERLAY -->
+  <div class="cart-overlay" id="cart-overlay" onclick="toggleCart()"></div>
+
+  <!-- DRAWER CARRINHO -->
+  <div class="cart-drawer" id="cart-drawer">
+    <div class="cart-drawer-header">
+      <h3>🛒 Meu Carrinho</h3>
+      <button class="cart-close" onclick="toggleCart()">✕</button>
+    </div>
+    <div class="cart-items" id="cart-items"></div>
+    <div class="cart-footer">
+      <div class="cart-total">
+        <span>Total</span>
+        <span id="cart-total">R$ 0,00</span>
+      </div>
+      <button class="btn-checkout" id="checkout-btn" onclick="checkout()" disabled>Finalizar pedido</button>
+    </div>
+  </div>
+
+  <!-- TOAST -->
+  <div class="toast" id="toast"></div>
+
+  <!-- MODAL PEDIDO CONFIRMADO -->
+  <div class="modal-overlay" id="modal-order">
+    <div class="modal">
+      <div class="order-success">
+        <div class="check">✅</div>
+        <h3>Pedido realizado!</h3>
+        <p>Seu pedido foi recebido com sucesso.<br/>Em breve entraremos em contato.</p>
+      </div>
+      <div class="modal-footer" style="justify-content:center">
+        <button class="btn btn-success" onclick="document.getElementById('modal-order').classList.remove('open')">Fechar</button>
+      </div>
+    </div>
+  </div>
 
   <div class="hero">
     <h2>🛒 Bem-vindo ao MercUp!</h2>
@@ -23,6 +63,14 @@
   <div class="tabs">
     <button class="tab-btn active" data-tab="promotions">🔥 Promoções</button>
     <button class="tab-btn" data-tab="products">📦 Produtos</button>
+  </div>
+
+  <div class="search-bar-wrap" id="search-bar-wrap" style="display:none">
+    <div class="search-bar">
+      <span class="search-icon">🔍</span>
+      <input type="text" id="search-input" placeholder="Buscar produto por nome ou categoria..." autocomplete="off"/>
+      <button class="search-clear" id="search-clear" style="display:none" onclick="clearSearch()">✕</button>
+    </div>
   </div>
 
   <div class="container">
@@ -35,8 +83,105 @@
   </div>
 
   <script>
-    let currentTab = 'promotions';
+    const CART_KEY = 'mercup_cart';
+    let cart = JSON.parse(localStorage.getItem(CART_KEY) || '{}');
+    let allProducts = [];
 
+    function saveCart() {
+      localStorage.setItem(CART_KEY, JSON.stringify(cart));
+    }
+
+    // ── CARRINHO ──────────────────────────────────────
+    function toggleCart() {
+      document.getElementById('cart-drawer').classList.toggle('open');
+      document.getElementById('cart-overlay').classList.toggle('open');
+    }
+
+    function addToCart(id) {
+      const p = allProducts.find(x => x.id === id);
+      if (!p || p.stock === 0) return;
+      if (cart[id]) {
+        if (cart[id].qty >= p.stock) { showToast('Quantidade máxima atingida'); return; }
+        cart[id].qty++;
+      } else {
+        cart[id] = { ...p, qty: 1 };
+      }
+      saveCart();
+      renderCart();
+      showToast(`${p.name} adicionado ao carrinho`);
+    }
+
+    function changeQty(id, delta) {
+      if (!cart[id]) return;
+      cart[id].qty += delta;
+      if (cart[id].qty <= 0) delete cart[id];
+      saveCart();
+      renderCart();
+    }
+
+    function removeFromCart(id) {
+      delete cart[id];
+      saveCart();
+      renderCart();
+    }
+
+    function renderCart() {
+      const items = Object.values(cart);
+      const total = items.reduce((s, i) => s + i.price * i.qty, 0);
+      const count = items.reduce((s, i) => s + i.qty, 0);
+
+      // badge
+      const badge = document.getElementById('cart-count');
+      badge.textContent = count;
+      badge.style.display = count > 0 ? 'flex' : 'none';
+
+      // total
+      document.getElementById('cart-total').textContent = `R$ ${total.toFixed(2).replace('.', ',')}` ;
+      document.getElementById('checkout-btn').disabled = items.length === 0;
+
+      // lista
+      const el = document.getElementById('cart-items');
+      if (!items.length) {
+        el.innerHTML = '<div class="cart-empty"><div style="font-size:2.5rem">🛒</div><p>Seu carrinho está vazio</p></div>';
+        return;
+      }
+
+      el.innerHTML = items.map(i => `
+        <div class="cart-item">
+          <img src="${i.image || `https://picsum.photos/seed/${i.id}prod/400/200`}" alt="${i.name}"/>
+          <div class="cart-item-info">
+            <strong>${i.name}</strong>
+            <span>R$ ${Number(i.price).toFixed(2).replace('.', ',')}</span>
+            <div class="cart-qty">
+              <button onclick="changeQty(${i.id}, -1)">−</button>
+              <span>${i.qty}</span>
+              <button onclick="changeQty(${i.id}, 1)">+</button>
+            </div>
+          </div>
+          <div style="display:flex;flex-direction:column;align-items:flex-end;gap:0.4rem">
+            <span class="cart-item-price">R$ ${(i.price * i.qty).toFixed(2).replace('.', ',')}</span>
+            <button class="cart-remove" onclick="removeFromCart(${i.id})" title="Remover">🗑</button>
+          </div>
+        </div>
+      `).join('');
+    }
+
+    async function checkout() {
+      cart = {};
+      saveCart();
+      renderCart();
+      toggleCart();
+      document.getElementById('modal-order').classList.add('open');
+    }
+
+    function showToast(msg) {
+      const t = document.getElementById('toast');
+      t.textContent = msg;
+      t.classList.add('show');
+      setTimeout(() => t.classList.remove('show'), 2500);
+    }
+
+    // ── PRODUTOS / PROMOÇÕES ──────────────────────────
     async function init() {
       const res = await fetch('/auth/me');
       if (!res.ok) { window.location.href = '/login.html'; return; }
@@ -44,18 +189,14 @@
       document.getElementById('nav-user').textContent = `Olá, ${user.name}`;
       loadPromotions();
       loadProducts();
+      renderCart();
     }
 
     async function loadPromotions() {
       const res = await fetch('/api/promotions');
       const data = await res.json();
       const grid = document.getElementById('promo-grid');
-
-      if (!data.length) {
-        grid.innerHTML = '<p class="empty">Nenhuma promoção ativa no momento.</p>';
-        return;
-      }
-
+      if (!data.length) { grid.innerHTML = '<p class="empty">Nenhuma promoção ativa no momento.</p>'; return; }
       grid.innerHTML = data.map(p => `
         <div class="promo-card">
           <div class="promo-discount">${p.discount}%<br/><small style="font-size:0.55rem">OFF</small></div>
@@ -67,23 +208,19 @@
       `).join('');
     }
 
-    async function loadProducts() {
-      const res = await fetch('/api/products');
-      const data = await res.json();
+    function renderProducts(list) {
       const grid = document.getElementById('product-grid');
-
-      if (!data.length) {
-        grid.innerHTML = '<p class="empty">Nenhum produto cadastrado.</p>';
+      if (!list.length) {
+        grid.innerHTML = '<p class="empty">Nenhum produto encontrado.</p>';
         return;
       }
-
-      grid.innerHTML = data.map(p => {
-        const stockLabel = p.stock === 0
+      grid.innerHTML = list.map(p => {
+        const outOfStock = p.stock === 0;
+        const stockLabel = outOfStock
           ? '<span class="stock-out">✗ Sem estoque</span>'
           : p.stock <= 5
           ? `<span class="stock-low">⚠ Últimas ${p.stock} unidades</span>`
           : `<span class="stock-ok">✓ Em estoque</span>`;
-
         return `
           <div class="card">
             <img src="${p.image || `https://picsum.photos/seed/${p.id}prod/400/200`}" alt="${p.name}"/>
@@ -91,22 +228,56 @@
               ${p.category ? `<span class="badge badge-green">${p.category}</span>` : ''}
               <h3 style="margin-top:0.4rem">${p.name}</h3>
               <p>${p.description || ''}</p>
-              <div class="price">R$ ${Number(p.price).toFixed(2)}</div>
+              <div class="price">R$ ${Number(p.price).toFixed(2).replace('.', ',')}</div>
               ${stockLabel}
+              <button class="btn-add-cart" onclick="addToCart(${p.id})" ${outOfStock ? 'disabled' : ''}>
+                ${outOfStock ? 'Sem estoque' : '+ Adicionar ao carrinho'}
+              </button>
             </div>
           </div>
         `;
       }).join('');
     }
 
+    async function loadProducts() {
+      const res = await fetch('/api/products');
+      allProducts = await res.json();
+      renderProducts(allProducts);
+    }
+
+    // ── PESQUISA ──────────────────────────────────────
+    function filterProducts(query) {
+      const q = query.toLowerCase().trim();
+      if (!q) return allProducts;
+      return allProducts.filter(p =>
+        p.name.toLowerCase().includes(q) ||
+        (p.category && p.category.toLowerCase().includes(q)) ||
+        (p.description && p.description.toLowerCase().includes(q))
+      );
+    }
+
+    function clearSearch() {
+      document.getElementById('search-input').value = '';
+      document.getElementById('search-clear').style.display = 'none';
+      renderProducts(allProducts);
+    }
+
     document.querySelectorAll('.tab-btn').forEach(btn => {
       btn.addEventListener('click', () => {
         document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
         btn.classList.add('active');
-        currentTab = btn.dataset.tab;
-        document.getElementById('tab-promotions').style.display = currentTab === 'promotions' ? 'block' : 'none';
-        document.getElementById('tab-products').style.display = currentTab === 'products' ? 'block' : 'none';
+        const tab = btn.dataset.tab;
+        document.getElementById('tab-promotions').style.display = tab === 'promotions' ? 'block' : 'none';
+        document.getElementById('tab-products').style.display = tab === 'products' ? 'block' : 'none';
+        document.getElementById('search-bar-wrap').style.display = tab === 'products' ? 'block' : 'none';
+        if (tab === 'products') document.getElementById('search-input').focus();
       });
+    });
+
+    document.getElementById('search-input').addEventListener('input', (e) => {
+      const q = e.target.value;
+      document.getElementById('search-clear').style.display = q ? 'inline-flex' : 'none';
+      renderProducts(filterProducts(q));
     });
 
     document.getElementById('logout-btn').addEventListener('click', async () => {

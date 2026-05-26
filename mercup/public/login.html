@@ -86,13 +86,20 @@
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email, password }),
       });
-      const data = await res.json();
+      let data = {};
 
-      if (!res.ok) {
-        errorEl.textContent = data.error;
-        errorEl.style.display = 'block';
-        return;
-      }
+try {
+  const text = await res.text();
+  data = text ? JSON.parse(text) : {};
+} catch (e) {
+  data = {};
+}
+
+if (!res.ok) {
+  errorEl.textContent = data.error || 'Erro no login';
+  errorEl.style.display = 'block';
+  return;
+}
 
       window.location.href = data.role === 'admin' ? '/admin.html' : '/index.html';
     });
