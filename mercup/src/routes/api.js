@@ -90,4 +90,29 @@ router.delete('/promotions/:id', requireAdmin, (req, res) => {
   res.json({ ok: true });
 });
 
+// Checkout — desconta estoque de cada item do carrinho
+router.post('/checkout', requireAuth, (req, res) => {
+  const { items } = req.body; // [{ id, qty }]
+  if (!items || !items.length) return res.status(400).json({ error: 'Carrinho vazio' });
+
+  // Valida estoque antes de descontar (tudo ou nada)
+  const checkStock = db.transaction(() => {
+    for (const item of items) {
+      const product = db.prepare('SELECT stock FROM products WHERE id = ?').get(item.id);
+      if (!product) throw new Error(`Produto ${item.id} não encontrado`);
+      if (product.stock < item.qty) throw new Error(`Estoque insuficiente para "${item.id}"`);
+    }
+    for (const item of items) {
+      db.prepare('UPDATE products SET stock = stock - ? WHERE id = ?').run(item.qty, item.id);
+    }
+  });
+
+  try {
+    checkStock();
+    res.json({ ok: true });
+  } catch (e) {
+    res.status(409).json({ error: e.message });
+  }
+});
+
 module.exports = router;
