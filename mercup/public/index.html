@@ -15,14 +15,13 @@
         🛒 Carrinho
         <span class="cart-count" id="cart-count">0</span>
       </button>
+      <button class="btn-nav" onclick="openProfile()">👤 Perfil</button>
       <button class="btn-nav" id="logout-btn">Sair</button>
     </div>
   </nav>
 
-  <!-- OVERLAY -->
   <div class="cart-overlay" id="cart-overlay" onclick="toggleCart()"></div>
 
-  <!-- DRAWER CARRINHO -->
   <div class="cart-drawer" id="cart-drawer">
     <div class="cart-drawer-header">
       <h3>🛒 Meu Carrinho</h3>
@@ -38,19 +37,53 @@
     </div>
   </div>
 
-  <!-- TOAST -->
   <div class="toast" id="toast"></div>
+
+  <!-- MODAL CHECKOUT -->
+  <div class="modal-overlay" id="modal-checkout">
+    <div class="modal">
+      <h3>🛒 Finalizar pedido</h3>
+      <p style="color:var(--muted);font-size:0.9rem;margin-bottom:1.2rem">Como deseja receber seu pedido?</p>
+      <div class="delivery-tabs">
+        <button class="dtab active" data-type="delivery" onclick="selectDeliveryType('delivery')">🚚 Entrega</button>
+        <button class="dtab" data-type="pickup" onclick="selectDeliveryType('pickup')">🏪 Retirada no local</button>
+      </div>
+      <div id="checkout-delivery-info" style="background:#f8fafc;border-radius:10px;padding:1rem;margin-top:1rem;font-size:0.88rem;color:var(--muted)">
+        Seu pedido será entregue no endereço cadastrado no seu perfil.
+      </div>
+      <div class="modal-footer" style="margin-top:1.2rem">
+        <button class="btn" style="background:#eee;color:#333" onclick="document.getElementById('modal-checkout').classList.remove('open')">Cancelar</button>
+        <button class="btn btn-primary" onclick="confirmCheckout()">Confirmar pedido</button>
+      </div>
+    </div>
+  </div>
 
   <!-- MODAL PEDIDO CONFIRMADO -->
   <div class="modal-overlay" id="modal-order">
     <div class="modal">
       <div class="order-success">
         <div class="check">✅</div>
-        <h3>Pedido realizado!</h3>
-        <p>Seu pedido foi recebido com sucesso.<br/>Em breve entraremos em contato.</p>
+        <h3>Pedido enviado!</h3>
+        <p id="order-success-msg">Seu pedido foi recebido.<br/>Aguarde a confirmação do administrador.</p>
       </div>
       <div class="modal-footer" style="justify-content:center">
-        <button class="btn btn-success" onclick="document.getElementById('modal-order').classList.remove('open')">Fechar</button>
+        <button class="btn btn-success" onclick="document.getElementById('modal-order').classList.remove('open');goToOrders()">Ver meus pedidos</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- MODAL PERFIL -->
+  <div class="modal-overlay" id="modal-profile">
+    <div class="modal">
+      <h3>👤 Meu Perfil</h3>
+      <div class="form-group"><label>Nome</label><input type="text" id="profile-name"/></div>
+      <div class="form-group"><label>E-mail</label><input type="email" id="profile-email"/></div>
+      <div class="form-group"><label>Telefone</label><input type="tel" id="profile-phone" placeholder="(00) 00000-0000"/></div>
+      <div class="form-group"><label>Endereço</label><textarea id="profile-address" rows="3" placeholder="Rua, número, bairro, cidade..."></textarea></div>
+      <p id="profile-msg" style="font-size:0.85rem;margin-bottom:0.5rem;display:none"></p>
+      <div class="modal-footer">
+        <button class="btn" style="background:#eee;color:#333" onclick="document.getElementById('modal-profile').classList.remove('open')">Cancelar</button>
+        <button class="btn btn-primary" onclick="saveProfile()">Salvar</button>
       </div>
     </div>
   </div>
@@ -63,6 +96,7 @@
   <div class="tabs">
     <button class="tab-btn active" data-tab="promotions">🔥 Promoções</button>
     <button class="tab-btn" data-tab="products">📦 Produtos</button>
+    <button class="tab-btn" data-tab="my-orders">📋 Meus Pedidos</button>
   </div>
 
   <div class="search-bar-wrap" id="search-bar-wrap" style="display:none">
@@ -74,22 +108,19 @@
   </div>
 
   <div class="container">
-    <div id="tab-promotions">
-      <div class="grid" id="promo-grid"></div>
-    </div>
-    <div id="tab-products" style="display:none">
-      <div class="grid" id="product-grid"></div>
-    </div>
+    <div id="tab-promotions"><div class="grid" id="promo-grid"></div></div>
+    <div id="tab-products" style="display:none"><div class="grid" id="product-grid"></div></div>
+    <div id="tab-my-orders" style="display:none"><div id="my-orders-list"></div></div>
   </div>
 
   <script>
-    const CART_KEY = 'mercup_cart';
-    let cart = JSON.parse(localStorage.getItem(CART_KEY) || '{}');
+    let cart = {};
     let allProducts = [];
-
-    function saveCart() {
-      localStorage.setItem(CART_KEY, JSON.stringify(cart));
-    }
+    let currentDeliveryType = 'delivery';
+    let ordersPolling = null;
+    let productsPolling = null;
+    let promotionsPolling = null;
+    let currentTab = 'promotions';
 
     // ── CARRINHO ──────────────────────────────────────
     function toggleCart() {
@@ -97,34 +128,48 @@
       document.getElementById('cart-overlay').classList.toggle('open');
     }
 
-    function addToCart(id) {
+    async function loadCart() {
+      const res = await fetch('/api/cart');
+      if (!res.ok) return;
+      const items = await res.json();
+      cart = {};
+      items.forEach(i => { cart[i.id] = i; });
+      renderCart();
+    }
+
+    async function saveCartItem(product_id, qty) {
+      await fetch('/api/cart', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ product_id, qty }),
+      });
+    }
+
+    async function addToCart(id) {
       const p = allProducts.find(x => x.id === id);
       if (!p || p.stock === 0) return;
       const currentQty = cart[id] ? cart[id].qty : 0;
-      if (currentQty >= p.stock) {
-        showToast('Quantidade máxima em estoque atingida');
-        return;
-      }
-      if (cart[id]) { cart[id].qty++; } else { cart[id] = { ...p, qty: 1 }; }
-      saveCart();
+      if (currentQty >= p.stock) { showToast('Quantidade máxima em estoque atingida'); return; }
+      const newQty = currentQty + 1;
+      cart[id] = { ...p, qty: newQty };
+      await saveCartItem(id, newQty);
       renderCart();
       showToast(`${p.name} adicionado ao carrinho`);
     }
 
-    function changeQty(id, delta) {
+    async function changeQty(id, delta) {
       if (!cart[id]) return;
       const p = allProducts.find(x => x.id === id);
       const next = cart[id].qty + delta;
       if (p && next > p.stock) { showToast('Quantidade máxima em estoque atingida'); return; }
-      cart[id].qty = next;
-      if (cart[id].qty <= 0) delete cart[id];
-      saveCart();
+      if (next <= 0) { delete cart[id]; } else { cart[id].qty = next; }
+      await saveCartItem(id, next);
       renderCart();
     }
 
-    function removeFromCart(id) {
+    async function removeFromCart(id) {
       delete cart[id];
-      saveCart();
+      await saveCartItem(id, 0);
       renderCart();
     }
 
@@ -132,23 +177,16 @@
       const items = Object.values(cart);
       const total = items.reduce((s, i) => s + i.price * i.qty, 0);
       const count = items.reduce((s, i) => s + i.qty, 0);
-
-      // badge
       const badge = document.getElementById('cart-count');
       badge.textContent = count;
       badge.style.display = count > 0 ? 'flex' : 'none';
-
-      // total
-      document.getElementById('cart-total').textContent = `R$ ${total.toFixed(2).replace('.', ',')}` ;
+      document.getElementById('cart-total').textContent = `R$ ${total.toFixed(2).replace('.', ',')}`;
       document.getElementById('checkout-btn').disabled = items.length === 0;
-
-      // lista
       const el = document.getElementById('cart-items');
       if (!items.length) {
         el.innerHTML = '<div class="cart-empty"><div style="font-size:2.5rem">🛒</div><p>Seu carrinho está vazio</p></div>';
         return;
       }
-
       el.innerHTML = items.map(i => `
         <div class="cart-item">
           <img src="${i.image || `https://picsum.photos/seed/${i.id}prod/400/200`}" alt="${i.name}"/>
@@ -169,27 +207,195 @@
       `).join('');
     }
 
-    async function checkout() {
-      const items = Object.values(cart).map(i => ({ id: i.id, qty: i.qty }));
+    // ── CHECKOUT ──────────────────────────────────────
+    function checkout() {
+      toggleCart();
+      currentDeliveryType = 'delivery';
+      document.querySelectorAll('.dtab').forEach(b => b.classList.toggle('active', b.getAttribute('data-type') === 'delivery'));
+      document.getElementById('checkout-delivery-info').textContent = 'Seu pedido será entregue no endereço cadastrado no seu perfil.';
+      document.getElementById('modal-checkout').classList.add('open');
+    }
 
+    function selectDeliveryType(type) {
+      currentDeliveryType = type;
+      document.querySelectorAll('.dtab').forEach(b => b.classList.toggle('active', b.getAttribute('data-type') === type));
+      document.getElementById('checkout-delivery-info').textContent = type === 'delivery'
+        ? 'Seu pedido será entregue no endereço cadastrado no seu perfil.'
+        : 'Você retirará o pedido no local. Aguarde a confirmação do administrador.';
+    }
+
+    async function confirmCheckout() {
+      const items = Object.values(cart).map(i => ({ id: i.id, qty: i.qty }));
+      if (!items.length) { showToast('Carrinho vazio'); return; }
       const res = await fetch('/api/checkout', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ items }),
+        body: JSON.stringify({ items, delivery_type: currentDeliveryType }),
       });
+      if (!res.ok) { const d = await res.json(); showToast(`Erro: ${d.error}`); return; }
+      document.getElementById('modal-checkout').classList.remove('open');
+      const typeLabel = currentDeliveryType === 'delivery' ? 'entrega' : 'retirada no local';
+      document.getElementById('order-success-msg').innerHTML =
+        `Pedido de <strong>${typeLabel}</strong> recebido!<br/>Aguarde a confirmação do administrador.`;
+      cart = {};
+      renderCart();
+      await fetch('/api/cart', { method: 'DELETE' });
+      await loadProducts();
+      document.getElementById('modal-order').classList.add('open');
+    }
 
-      if (!res.ok) {
-        const data = await res.json();
-        showToast(`Erro: ${data.error}`);
+    // ── MEUS PEDIDOS ──────────────────────────────────
+    function goToOrders() {
+      document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+      document.querySelector('[data-tab="my-orders"]').classList.add('active');
+      document.getElementById('tab-promotions').style.display = 'none';
+      document.getElementById('tab-products').style.display = 'none';
+      document.getElementById('tab-my-orders').style.display = 'block';
+      document.getElementById('search-bar-wrap').style.display = 'none';
+      startOrdersPolling();
+    }
+
+    function startOrdersPolling() {
+      renderMyOrders();
+      if (ordersPolling) clearInterval(ordersPolling);
+      ordersPolling = setInterval(renderMyOrders, 3000);
+    }
+
+    function stopOrdersPolling() {
+      if (ordersPolling) { clearInterval(ordersPolling); ordersPolling = null; }
+    }
+
+    function startProductsPolling() {
+      if (productsPolling) clearInterval(productsPolling);
+      productsPolling = setInterval(() => {
+        if (currentTab === 'products') loadProducts();
+      }, 5000);
+    }
+
+    function stopProductsPolling() {
+      if (productsPolling) { clearInterval(productsPolling); productsPolling = null; }
+    }
+
+    function startPromotionsPolling() {
+      if (promotionsPolling) clearInterval(promotionsPolling);
+      promotionsPolling = setInterval(() => {
+        if (currentTab === 'promotions') loadPromotions();
+      }, 5000);
+    }
+
+    function stopPromotionsPolling() {
+      if (promotionsPolling) { clearInterval(promotionsPolling); promotionsPolling = null; }
+    }
+
+    function stopAllPolling() {
+      stopOrdersPolling();
+      stopProductsPolling();
+      stopPromotionsPolling();
+    }
+
+    async function renderMyOrders() {
+      const el = document.getElementById('my-orders-list');
+      const res = await fetch('/api/my-orders');
+      if (!res.ok) return;
+      const orders = await res.json();
+
+      if (!orders.length) {
+        el.innerHTML = '<p class="empty">Você ainda não fez nenhum pedido.</p>';
         return;
       }
 
-      cart = {};
-      saveCart();
-      renderCart();
-      toggleCart();
-      await loadProducts(); // atualiza estoque exibido
-      document.getElementById('modal-order').classList.add('open');
+      const statusMap = {
+        pending:  { label: '⏳ Aguardando aprovação',  color: '#f59e0b', bg: '#fffbeb' },
+        approved: { label: '✅ Aprovado! Em preparo...', color: '#2563eb', bg: '#eff6ff' },
+        done:     { label: '🏁 Concluído. Obrigado!',   color: '#6b7280', bg: '#f9fafb' },
+        rejected: { label: '❌ Pedido recusado',         color: '#dc2626', bg: '#fef2f2' },
+      };
+
+      el.innerHTML = orders.map(o => {
+        const readyLabel = o.delivery_type === 'delivery' ? '🚚 Pedido a caminho!' : '📦 Pronto para retirada!';
+        const s = o.status === 'ready'
+          ? { label: readyLabel, color: '#16a34a', bg: '#f0fdf4' }
+          : (statusMap[o.status] || statusMap.pending);
+        const typeLabel = o.delivery_type === 'delivery' ? '🚚 Entrega' : '🏪 Retirada no local';
+        const canConfirm = o.delivery_type === 'delivery' && o.status === 'ready';
+        return `
+          <div class="order-card">
+            <div class="order-card-header">
+              <div style="display:flex;align-items:center;gap:0.6rem">
+                <strong>#${o.id}</strong>
+                <span class="badge" style="background:#e0f2fe;color:#0369a1">${typeLabel}</span>
+              </div>
+              <span style="font-size:0.82rem;color:#999">${new Date(o.created_at).toLocaleString('pt-BR')}</span>
+            </div>
+            <div class="order-card-body">
+              <div style="background:${s.bg};color:${s.color};padding:0.6rem 1rem;border-radius:8px;font-weight:700;font-size:0.9rem;margin-bottom:0.6rem">
+                ${s.label}
+              </div>
+              ${o.admin_note ? `<div style="font-size:0.85rem;color:#555;margin-bottom:0.5rem">💬 ${o.admin_note}</div>` : ''}
+              <div style="font-size:0.82rem;color:#888">${o.items.map(i => `${i.qty}x produto #${i.id}`).join(', ')}</div>
+              ${canConfirm ? `
+                <div style="margin-top:0.8rem">
+                  <button class="btn btn-primary" style="width:100%" onclick="confirmDelivery(${o.id})">✅ Confirmar que recebi o pedido</button>
+                </div>` : ''}
+            </div>
+            <div class="order-card-footer">
+              <span style="font-weight:800;color:var(--primary)">R$ ${Number(o.total).toFixed(2).replace('.', ',')}</span>
+            </div>
+          </div>
+        `;
+      }).join('');
+    }
+
+    async function confirmDelivery(id) {
+      if (!confirm('Confirmar que você recebeu este pedido?')) return;
+      const res = await fetch(`/api/my-orders/${id}/confirm`, { method: 'PUT' });
+      if (!res.ok) { 
+        const d = await res.json(); 
+        showToast(`Erro: ${d.error}`); 
+        return; 
+      }
+      showToast('✅ Recebimento confirmado com sucesso!');
+      renderMyOrders();
+    }
+
+    // ── PERFIL ────────────────────────────────────────
+    async function openProfile() {
+      const res = await fetch('/auth/me');
+      const user = await res.json();
+      document.getElementById('profile-name').value = user.name || '';
+      document.getElementById('profile-email').value = user.email || '';
+      document.getElementById('profile-phone').value = user.phone || '';
+      document.getElementById('profile-address').value = user.address || '';
+      document.getElementById('profile-msg').style.display = 'none';
+      document.getElementById('modal-profile').classList.add('open');
+    }
+
+    async function saveProfile() {
+      const name = document.getElementById('profile-name').value.trim();
+      const email = document.getElementById('profile-email').value.trim();
+      const phone = document.getElementById('profile-phone').value.trim();
+      const address = document.getElementById('profile-address').value.trim();
+      const msg = document.getElementById('profile-msg');
+      if (!name || !email) {
+        msg.textContent = 'Nome e e-mail são obrigatórios';
+        msg.style.color = '#dc3545'; msg.style.display = 'block'; return;
+      }
+      try {
+        const res = await fetch('/auth/me', {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ name, email, phone, address }),
+        });
+        const data = await res.json();
+        if (!res.ok) { msg.textContent = data.error || 'Erro ao salvar'; msg.style.color = '#dc3545'; msg.style.display = 'block'; return; }
+        document.getElementById('nav-user').textContent = `Olá, ${name}`;
+        msg.textContent = 'Dados salvos com sucesso!';
+        msg.style.color = '#22c55e'; msg.style.display = 'block';
+        setTimeout(() => document.getElementById('modal-profile').classList.remove('open'), 1500);
+      } catch {
+        msg.textContent = 'Erro de conexão.';
+        msg.style.color = '#dc3545'; msg.style.display = 'block';
+      }
     }
 
     function showToast(msg) {
@@ -205,9 +411,14 @@
       if (!res.ok) { window.location.href = '/login.html'; return; }
       const user = await res.json();
       document.getElementById('nav-user').textContent = `Olá, ${user.name}`;
+      if (user.role === 'admin') {
+        document.getElementById('cart-toggle-btn').style.display = 'none';
+        document.getElementById('checkout-btn').style.display = 'none';
+      }
       loadPromotions();
       loadProducts();
-      renderCart();
+      loadCart();
+      startPromotionsPolling();
     }
 
     async function loadPromotions() {
@@ -220,7 +431,7 @@
           <div class="promo-discount">${p.discount}%<br/><small style="font-size:0.55rem">OFF</small></div>
           <h3>${p.title}</h3>
           <p>${p.description || ''}</p>
-          ${p.product_name ? `<span class="badge badge-red" style="background:rgba(255,255,255,0.2);color:white">📦 ${p.product_name}</span>` : ''}
+          ${p.product_name ? `<span class="badge" style="background:rgba(255,255,255,0.2);color:white">📦 ${p.product_name}</span>` : ''}
           ${p.expires_at ? `<p style="font-size:0.75rem;opacity:0.8;margin-top:0.5rem">⏰ Até ${new Date(p.expires_at).toLocaleDateString('pt-BR')}</p>` : ''}
         </div>
       `).join('');
@@ -228,16 +439,12 @@
 
     function renderProducts(list) {
       const grid = document.getElementById('product-grid');
-      if (!list.length) {
-        grid.innerHTML = '<p class="empty">Nenhum produto encontrado.</p>';
-        return;
-      }
+      if (!list.length) { grid.innerHTML = '<p class="empty">Nenhum produto encontrado.</p>'; return; }
       grid.innerHTML = list.map(p => {
         const outOfStock = p.stock === 0;
         const stockLabel = outOfStock
           ? '<span class="stock-out">✗ Sem estoque</span>'
-          : p.stock <= 5
-          ? `<span class="stock-low">⚠ Últimas ${p.stock} unidades</span>`
+          : p.stock <= 5 ? `<span class="stock-low">⚠ Últimas ${p.stock} unidades</span>`
           : `<span class="stock-ok">✓ Em estoque</span>`;
         return `
           <div class="card">
@@ -263,7 +470,6 @@
       renderProducts(allProducts);
     }
 
-    // ── PESQUISA ──────────────────────────────────────
     function filterProducts(query) {
       const q = query.toLowerCase().trim();
       if (!q) return allProducts;
@@ -285,10 +491,23 @@
         document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
         btn.classList.add('active');
         const tab = btn.dataset.tab;
+        currentTab = tab;
         document.getElementById('tab-promotions').style.display = tab === 'promotions' ? 'block' : 'none';
         document.getElementById('tab-products').style.display = tab === 'products' ? 'block' : 'none';
+        document.getElementById('tab-my-orders').style.display = tab === 'my-orders' ? 'block' : 'none';
         document.getElementById('search-bar-wrap').style.display = tab === 'products' ? 'block' : 'none';
-        if (tab === 'products') document.getElementById('search-input').focus();
+        
+        stopAllPolling();
+        
+        if (tab === 'products') {
+          document.getElementById('search-input').focus();
+          startProductsPolling();
+        } else if (tab === 'my-orders') {
+          document.getElementById('my-orders-list').innerHTML = '<p class="empty">Carregando...</p>';
+          startOrdersPolling();
+        } else if (tab === 'promotions') {
+          startPromotionsPolling();
+        }
       });
     });
 
@@ -299,6 +518,7 @@
     });
 
     document.getElementById('logout-btn').addEventListener('click', async () => {
+      stopAllPolling();
       await fetch('/auth/logout', { method: 'POST' });
       window.location.href = '/login.html';
     });

@@ -37,7 +37,23 @@ router.post('/logout', (req, res) => {
 
 router.get('/me', (req, res) => {
   if (!req.session.userId) return res.status(401).json({ error: 'Não autenticado' });
-  res.json({ id: req.session.userId, name: req.session.userName, role: req.session.userRole });
+  const user = db.prepare('SELECT id, name, email, role, phone, address FROM users WHERE id = ?').get(req.session.userId);
+  res.json(user);
+});
+
+router.put('/me', (req, res) => {
+  if (!req.session.userId) return res.status(401).json({ error: 'Não autenticado' });
+  const { name, email, phone, address } = req.body;
+  if (!name) return res.status(400).json({ error: 'Nome é obrigatório' });
+  if (!email) return res.status(400).json({ error: 'E-mail é obrigatório' });
+
+  const conflict = db.prepare('SELECT id FROM users WHERE email = ? AND id != ?').get(email, req.session.userId);
+  if (conflict) return res.status(409).json({ error: 'E-mail já está em uso por outra conta' });
+
+  db.prepare('UPDATE users SET name=?, email=?, phone=?, address=? WHERE id=?')
+    .run(name, email, phone || null, address || null, req.session.userId);
+  req.session.userName = name;
+  res.json({ ok: true });
 });
 
 module.exports = router;

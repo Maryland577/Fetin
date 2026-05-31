@@ -10,13 +10,13 @@
   <nav>
     <a class="nav-brand" href="#">Merc<span>Up</span> <small style="font-size:0.7rem;opacity:0.8">Admin</small></a>
     <div class="nav-right">
-      <a class="btn-nav" href="/index.html">Ver site</a>
       <button class="btn-nav" id="logout-btn">Sair</button>
     </div>
   </nav>
 
   <div class="tabs">
     <button class="tab-btn active" data-tab="dashboard">📊 Dashboard</button>
+    <button class="tab-btn" data-tab="orders">🧾 Pedidos</button>
     <button class="tab-btn" data-tab="products">📦 Produtos</button>
     <button class="tab-btn" data-tab="promotions">🔥 Promoções</button>
     <button class="tab-btn" data-tab="stock">🗃 Estoque</button>
@@ -27,6 +27,22 @@
     <!-- DASHBOARD -->
     <div id="tab-dashboard">
       <div class="stats" id="stats"></div>
+    </div>
+
+    <!-- PEDIDOS -->
+    <div id="tab-orders" style="display:none">
+      <div class="section-header" style="margin-bottom:1rem">
+        <h2>Pedidos</h2>
+        <div style="display:flex;gap:0.5rem">
+          <button class="btn btn-sm" id="filter-all" onclick="filterOrders('all')" style="background:var(--primary);color:white">Todos</button>
+          <button class="btn btn-sm" id="filter-pending" onclick="filterOrders('pending')" style="background:#eee;color:#333">⏳ Pendentes</button>
+          <button class="btn btn-sm" id="filter-approved" onclick="filterOrders('approved')" style="background:#eee;color:#333">✅ Aprovados</button>
+          <button class="btn btn-sm" id="filter-ready" onclick="filterOrders('ready')" style="background:#eee;color:#333">📦 Prontos</button>
+          <button class="btn btn-sm" id="filter-done" onclick="filterOrders('done')" style="background:#eee;color:#333">🏁 Entregues</button>
+          <button class="btn btn-sm" id="filter-rejected" onclick="filterOrders('rejected')" style="background:#eee;color:#333">❌ Recusados</button>
+        </div>
+      </div>
+      <div id="orders-list"></div>
     </div>
 
     <!-- PRODUTOS -->
@@ -112,7 +128,12 @@
   </div>
 
   <script>
-    let products = [], promotions = [];
+    let products = [], promotions = [], orders = [];
+    let dashboardPolling = null;
+    let productsPolling = null;
+    let promotionsPolling = null;
+    let stockPolling = null;
+    let currentTab = 'dashboard';
 
     async function init() {
       const res = await fetch('/auth/me');
@@ -120,10 +141,12 @@
         window.location.href = '/login.html';
         return;
       }
-      await Promise.all([loadProducts(), loadPromotions()]);
+      await Promise.all([loadProducts(), loadPromotions(), loadOrders()]);
       renderDashboard();
+      startDashboardPolling();
     }
 
+    // ── PRODUTOS ──────────────────────────────────────
     async function loadProducts() {
       const res = await fetch('/api/products');
       products = await res.json();
@@ -138,11 +161,188 @@
       renderPromotions();
     }
 
+    // ── PEDIDOS ───────────────────────────────────────
+    let ordersPolling = null;
+    let currentOrderFilter = 'all';
+
+    async function loadOrders() {
+      const res = await fetch('/api/orders');
+      orders = await res.json();
+      renderOrders(currentOrderFilter);
+      if (currentTab === 'dashboard') renderDashboard();
+    }
+
+    function startOrdersPolling() {
+      loadOrders();
+      if (ordersPolling) clearInterval(ordersPolling);
+      ordersPolling = setInterval(loadOrders, 3000);
+    }
+
+    function stopOrdersPolling() {
+      if (ordersPolling) { clearInterval(ordersPolling); ordersPolling = null; }
+    }
+
+    function startDashboardPolling() {
+      if (dashboardPolling) clearInterval(dashboardPolling);
+      dashboardPolling = setInterval(async () => {
+        await Promise.all([loadProducts(), loadPromotions(), loadOrders()]);
+        renderDashboard();
+      }, 5000);
+    }
+
+    function stopDashboardPolling() {
+      if (dashboardPolling) { clearInterval(dashboardPolling); dashboardPolling = null; }
+    }
+
+    function startProductsPolling() {
+      if (productsPolling) clearInterval(productsPolling);
+      productsPolling = setInterval(async () => {
+        await loadProducts();
+        renderDashboard();
+      }, 5000);
+    }
+
+    function stopProductsPolling() {
+      if (productsPolling) { clearInterval(productsPolling); productsPolling = null; }
+    }
+
+    function startPromotionsPolling() {
+      if (promotionsPolling) clearInterval(promotionsPolling);
+      promotionsPolling = setInterval(async () => {
+        await loadPromotions();
+        renderDashboard();
+      }, 5000);
+    }
+
+    function stopPromotionsPolling() {
+      if (promotionsPolling) { clearInterval(promotionsPolling); promotionsPolling = null; }
+    }
+
+    function startStockPolling() {
+      if (stockPolling) clearInterval(stockPolling);
+      stockPolling = setInterval(async () => {
+        await loadProducts();
+        renderDashboard();
+      }, 5000);
+    }
+
+    function stopStockPolling() {
+      if (stockPolling) { clearInterval(stockPolling); stockPolling = null; }
+    }
+
+    function stopAllPolling() {
+      stopOrdersPolling();
+      stopDashboardPolling();
+      stopProductsPolling();
+      stopPromotionsPolling();
+      stopStockPolling();
+    }
+
+    function filterOrders(type) {
+      currentOrderFilter = type;
+      ['all','pending','approved','ready','done','rejected'].forEach(t => {
+        const btn = document.getElementById(`filter-${t}`);
+        btn.style.background = t === type ? 'var(--primary)' : '#eee';
+        btn.style.color = t === type ? 'white' : '#333';
+      });
+      renderOrders(type);
+    }
+
+    function renderOrders(filter) {
+      const list = filter === 'all' ? orders : orders.filter(o => o.status === filter);
+      const el = document.getElementById('orders-list');
+      if (!list.length) {
+        el.innerHTML = '<p style="text-align:center;color:#999;padding:3rem">Nenhum pedido encontrado.</p>';
+        return;
+      }
+
+      const statusMap = {
+        pending:  { label: '⏳ Aguardando aprovação', color: '#f59e0b' },
+        approved: { label: '✅ Aprovado',                color: '#2563eb' },
+        ready:    { label: '📦 Pronto para retirada / A caminho', color: '#16a34a' },
+        done:     { label: '🏁 Entregue / Retirado',  color: '#6b7280' },
+        rejected: { label: '❌ Recusado',                color: '#dc2626' },
+      };
+
+      el.innerHTML = list.map(o => {
+        const typeLabel = o.delivery_type === 'delivery' ? '🚚 Entrega' : '🏪 Retirada no local';
+        const typeBadge = o.delivery_type === 'delivery' ? 'badge-green' : 'badge-orange';
+        const s = statusMap[o.status] || statusMap.pending;
+        const itemsList = o.items.map(i => `${i.qty}x produto #${i.id}`).join(', ');
+
+        let actions = '';
+        if (o.status === 'pending') {
+          actions = `
+            <div style="margin-top:0.8rem;display:flex;gap:0.5rem;align-items:center;flex-wrap:wrap">
+              <input type="text" id="note-${o.id}" placeholder="Observação (opcional)" style="flex:1;min-width:160px;padding:0.4rem 0.7rem;border:1.5px solid var(--border);border-radius:8px;font-size:0.85rem"/>
+              <button class="btn btn-sm" style="background:#2563eb;color:white" onclick="updateOrder(${o.id},'approved')">Aprovar</button>
+              <button class="btn btn-sm btn-danger" onclick="updateOrder(${o.id},'rejected')">Recusar</button>
+            </div>`;
+        } else if (o.status === 'approved') {
+          actions = `
+            <div style="margin-top:0.8rem;display:flex;gap:0.5rem;align-items:center;flex-wrap:wrap">
+              <input type="text" id="note-${o.id}" placeholder="Observação (opcional)" style="flex:1;min-width:160px;padding:0.4rem 0.7rem;border:1.5px solid var(--border);border-radius:8px;font-size:0.85rem" value="${o.admin_note || ''}"/>
+              <button class="btn btn-sm" style="background:#16a34a;color:white" onclick="updateOrder(${o.id},'ready')">${o.delivery_type === 'delivery' ? '🚚 Saiu para entrega' : '📦 Pronto para retirada'}</button>
+              <button class="btn btn-sm btn-danger" onclick="updateOrder(${o.id},'rejected')">Recusar</button>
+            </div>`;
+        } else if (o.status === 'ready' && o.delivery_type === 'pickup') {
+          actions = `
+            <div style="margin-top:0.8rem;display:flex;gap:0.5rem;align-items:center;flex-wrap:wrap">
+              <input type="text" id="note-${o.id}" placeholder="Observação (opcional)" style="flex:1;min-width:160px;padding:0.4rem 0.7rem;border:1.5px solid var(--border);border-radius:8px;font-size:0.85rem" value="${o.admin_note || ''}"/>
+              <button class="btn btn-sm" style="background:#6b7280;color:white" onclick="updateOrder(${o.id},'done')">🏁 Confirmar retirada</button>
+            </div>`;
+        } else if (o.status === 'ready' && o.delivery_type === 'delivery') {
+          actions = `<div style="font-size:0.85rem;color:#16a34a;margin-top:0.5rem;font-weight:600">🚚 A caminho — aguardando confirmação do cliente</div>`;
+        } else if (o.admin_note) {
+          actions = `<div style="font-size:0.85rem;color:#555;margin-top:0.5rem">💬 ${o.admin_note}</div>`;
+        }
+
+        return `
+          <div class="order-card">
+            <div class="order-card-header">
+              <div style="display:flex;align-items:center;gap:0.6rem">
+                <strong>#${o.id}</strong>
+                <span class="badge ${typeBadge}">${typeLabel}</span>
+                <span style="font-weight:700;font-size:0.82rem;color:${s.color}">${s.label}</span>
+              </div>
+              <span style="font-size:0.82rem;color:#999">${new Date(o.created_at).toLocaleString('pt-BR')}</span>
+            </div>
+            <div class="order-card-body">
+              <div class="order-info-row">
+                <span>👤 <strong>${o.user_name}</strong></span>
+                ${o.user_phone ? `<span>📞 ${o.user_phone}</span>` : ''}
+              </div>
+              ${o.delivery_type === 'delivery' && o.user_address ? `<div style="font-size:0.85rem;color:#555;margin-top:0.3rem">📍 ${o.user_address}</div>` : ''}
+              <div style="font-size:0.82rem;color:#888;margin-top:0.4rem">${itemsList}</div>
+              ${actions}
+            </div>
+            <div class="order-card-footer">
+              <span style="font-weight:800;color:var(--primary)">R$ ${Number(o.total).toFixed(2).replace('.', ',')}</span>
+            </div>
+          </div>
+        `;
+      }).join('');
+    }
+
+    async function updateOrder(id, status) {
+      const noteEl = document.getElementById(`note-${id}`);
+      const admin_note = noteEl ? noteEl.value.trim() : '';
+      await fetch(`/api/orders/${id}/status`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status, admin_note }),
+      });
+      await loadOrders();
+    }
+
+    // ── DASHBOARD ─────────────────────────────────────
     function renderDashboard() {
       const totalStock = products.reduce((s, p) => s + p.stock, 0);
       const lowStock = products.filter(p => p.stock > 0 && p.stock <= 5).length;
       const outStock = products.filter(p => p.stock === 0).length;
       const activePromos = promotions.filter(p => p.active).length;
+      const pending  = orders.filter(o => o.status === 'pending').length;
+      const ready    = orders.filter(o => o.status === 'ready').length;
 
       document.getElementById('stats').innerHTML = `
         <div class="stat-card"><div class="stat-value">${products.length}</div><div class="stat-label">Produtos cadastrados</div></div>
@@ -150,6 +350,9 @@
         <div class="stat-card"><div class="stat-value" style="color:#f4a261">${lowStock}</div><div class="stat-label">Estoque baixo</div></div>
         <div class="stat-card"><div class="stat-value" style="color:#dc3545">${outStock}</div><div class="stat-label">Sem estoque</div></div>
         <div class="stat-card"><div class="stat-value" style="color:#2d6a4f">${activePromos}</div><div class="stat-label">Promoções ativas</div></div>
+        <div class="stat-card"><div class="stat-value" style="color:#f59e0b">${pending}</div><div class="stat-label">Pedidos pendentes</div></div>
+        <div class="stat-card"><div class="stat-value" style="color:#16a34a">${ready}</div><div class="stat-label">Prontos / A caminho</div></div>
+        <div class="stat-card"><div class="stat-value" style="color:#1E3A8A">${orders.length}</div><div class="stat-label">Total de pedidos</div></div>
       `;
     }
 
@@ -211,7 +414,7 @@
       sel.value = current;
     }
 
-    // PRODUTO CRUD
+    // ── PRODUTO CRUD ──────────────────────────────────
     function openModal(type) {
       if (type === 'product') {
         document.getElementById('modal-product-title').textContent = 'Novo Produto';
@@ -281,7 +484,7 @@
       renderDashboard();
     }
 
-    // PROMOÇÃO CRUD
+    // ── PROMOÇÃO CRUD ─────────────────────────────────
     function editPromotion(id) {
       const p = promotions.find(x => x.id === id);
       document.getElementById('modal-promo-title').textContent = 'Editar Promoção';
@@ -322,23 +525,32 @@
       renderDashboard();
     }
 
-    // TABS
+    // ── TABS ──────────────────────────────────────────
     document.querySelectorAll('.tab-btn').forEach(btn => {
       btn.addEventListener('click', () => {
         document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
         btn.classList.add('active');
-        ['dashboard','products','promotions','stock'].forEach(t => {
+        currentTab = btn.dataset.tab;
+        ['dashboard','orders','products','promotions','stock'].forEach(t => {
           document.getElementById(`tab-${t}`).style.display = btn.dataset.tab === t ? 'block' : 'none';
         });
+        
+        stopAllPolling();
+        
+        if (btn.dataset.tab === 'orders') startOrdersPolling();
+        else if (btn.dataset.tab === 'dashboard') startDashboardPolling();
+        else if (btn.dataset.tab === 'products') startProductsPolling();
+        else if (btn.dataset.tab === 'promotions') startPromotionsPolling();
+        else if (btn.dataset.tab === 'stock') startStockPolling();
       });
     });
 
     document.getElementById('logout-btn').addEventListener('click', async () => {
+      stopAllPolling();
       await fetch('/auth/logout', { method: 'POST' });
       window.location.href = '/login.html';
     });
 
-    // Fechar modal clicando fora
     document.querySelectorAll('.modal-overlay').forEach(el => {
       el.addEventListener('click', (e) => { if (e.target === el) el.classList.remove('open'); });
     });
