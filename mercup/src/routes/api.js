@@ -53,11 +53,13 @@ router.get('/promotions', requireAuth, (req, res) => {
     FROM promotions pr
     LEFT JOIN products p ON pr.product_id = p.id
     WHERE pr.active = 1
+      AND (pr.expires_at IS NULL OR pr.expires_at >= date('now'))
     ORDER BY pr.id DESC
   `).all());
 });
 
 router.get('/promotions/all', requireAdmin, (req, res) => {
+  db.prepare(`UPDATE promotions SET active = 0 WHERE expires_at IS NOT NULL AND expires_at < date('now')`).run();
   res.json(db.prepare(`
     SELECT pr.*, p.name as product_name
     FROM promotions pr
